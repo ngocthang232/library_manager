@@ -1,12 +1,24 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, Switch } from 'react-native';
+import {View, Text, StyleSheet, Image, TouchableOpacity, Switch, Alert} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import {router, useRouter} from 'expo-router';
+import {useAuth} from "@/context/authContext";
 
 export default function SettingScreen() {
     const [notif, setNotif] = useState(true);
     const [autoUpdate, setAutoUpdate] = useState(false);
-
+    const { user, logout } = useAuth();
+    const router = useRouter();
+    const onLogout = () => {
+        Alert.alert('Đăng xuất', 'Bạn có chắc muốn đăng xuất?', [
+            { text: 'Hủy', style: 'cancel' },
+            { text: 'Đăng xuất', style: 'destructive', onPress: async () => {
+                    await logout();
+                    router.replace('/login'); // đảm bảo về login ngay
+                }
+            },
+        ]);
+    };
     return (
         <View style={styles.container}>
             {/* Card tài khoản */}
@@ -66,8 +78,8 @@ export default function SettingScreen() {
             />
 
             {/* Đăng xuất */}
-            <TouchableOpacity style={styles.logoutBtn} onPress={() => router.replace('/login')}>
-                <Ionicons name="log-out-outline" size={18} color="#ef4444" />
+            <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
+                <Ionicons name="log-out-outline" size={18} color="#fff" />
                 <Text style={styles.logoutText}>Đăng xuất</Text>
             </TouchableOpacity>
         </View>
