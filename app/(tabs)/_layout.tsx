@@ -12,21 +12,21 @@ export default function TabLayout() {
                 }}
             />
             <Tabs.Screen
-                name="sach"
+                name="books"
                 options={{
                     title: 'Sách',
                     tabBarIcon: ({ color, size }) => <Ionicons name="book-outline" size={size} color={color} />,
                 }}
             />
             <Tabs.Screen
-                name="phieu"
+                name="receipt"
                 options={{
                     title: 'Phiếu',
                     tabBarIcon: ({ color, size }) => <Ionicons name="document-text-outline" size={size} color={color} />,
                 }}
             />
             <Tabs.Screen
-                name="caidat"
+                name="setting"
                 options={{
                     title: 'Cài đặt',
                     tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" size={size} color={color} />,

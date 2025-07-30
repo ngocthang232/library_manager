@@ -1,56 +1,156 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
-export default function AddBook() {
-    const [title, setTitle] = useState('');
-    const [author, setAuthor] = useState('');
-    const [publisher, setPublisher] = useState('');
-    const [year, setYear] = useState('');
+import { useForm, Controller } from 'react-hook-form';
+import * as yup from 'yup';
+import { yupResolver } from '@hookform/resolvers/yup';
 
-    const handleCreate = async () => {
-        if (!title || !author || !publisher || !year) {
-            Alert.alert('Thiếu thông tin', 'Vui lòng nhập đầy đủ các trường *');
-            return;
+type FormValues = {
+    title: string;
+    author: string;
+    publisher: string;
+    year: string; // để dễ kiểm tra chuỗi số; khi gửi có thể parseInt
+};
+
+const CURRENT_YEAR = new Date().getFullYear();
+
+const schema: yup.SchemaOf<FormValues> = yup.object({
+    title: yup
+        .string()
+        .trim()
+        .required('Vui lòng nhập tên sách')
+        .min(2, 'Tên sách tối thiểu 2 ký tự'),
+    author: yup
+        .string()
+        .trim()
+        .required('Vui lòng nhập tác giả'),
+    publisher: yup
+        .string()
+        .trim()
+        .required('Vui lòng nhập nhà xuất bản'),
+    year: yup
+        .string()
+        .required('Vui lòng nhập năm xuất bản')
+        .matches(/^\d+$/, 'Năm xuất bản phải là số')
+        .test('range', `Năm hợp lệ từ 1900 đến ${CURRENT_YEAR + 1}`, (val) => {
+            const n = Number(val);
+            return n >= 1900 && n <= CURRENT_YEAR + 1;
+        }),
+});
+
+export default function AddBookScreen() {
+    const {
+        control,
+        handleSubmit,
+        formState: { errors, isValid, isSubmitting },
+    } = useForm<FormValues>({
+        resolver: yupResolver(schema),
+        mode: 'onChange',          // validate theo từng thay đổi
+        reValidateMode: 'onChange',
+        defaultValues: {
+            title: '',
+            author: '',
+            publisher: '',
+            year: '',
+        },
+    });
+
+    const onSubmit = async (values: FormValues) => {
+        try {
+            // Chuyển year thành số nếu backend cần
+            const payload = {
+                title: values.title.trim(),
+                author: values.author.trim(),
+                publisher: values.publisher.trim(),
+                year: Number(values.year),
+            };
+
+            // TODO: Gọi API thật để tạo sách
+            // const res = await fetch('http://<server>/api/books', { ... })
+            // const data = await res.json();
+
+            Alert.alert('Thành công', 'Đã tạo sách!');
+            router.back(); // quay lại danh sách
+        } catch (e: any) {
+            Alert.alert('Lỗi', e?.message || 'Không thể tạo sách. Vui lòng thử lại!');
         }
-        // TODO: POST /api/books
-        Alert.alert('Thành công', 'Đã tạo sách!');
-        router.back();
     };
+
+    const renderField = (
+        name: keyof FormValues,
+        label: string,
+        placeholder: string,
+        keyboardType?: 'default' | 'numeric'
+    ) => (
+        <View style={{ marginBottom: 14 }}>
+            <Text style={styles.label}>{label} <Text style={{ color: 'red' }}>*</Text></Text>
+
+            <Controller
+                control={control}
+                name={name}
+                render={({ field: { onChange, onBlur, value } }) => (
+                    <TextInput
+                        value={value}
+                        onChangeText={onChange}
+                        onBlur={onBlur}
+                        placeholder={placeholder}
+                        keyboardType={keyboardType}
+                        style={[
+                            styles.input,
+                            errors[name] && { borderColor: '#ef4444' }, // viền đỏ khi lỗi
+                        ]}
+                    />
+                )}
+            />
+
+            {!!errors[name]?.message && (
+                <Text style={styles.errorText}>{String(errors[name]?.message)}</Text>
+            )}
+        </View>
+    );
 
     return (
         <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 24 }}>
-            <TouchableOpacity style={styles.coverBox}>
+            {/* Ảnh bìa (placeholder) */}
+            <TouchableOpacity style={styles.coverBox} onPress={() => { /* TODO: image picker */ }}>
                 <Ionicons name="image-outline" size={24} color="#3b82f6" />
             </TouchableOpacity>
 
-            <Field label="Tên sách" required value={title} onChangeText={setTitle} />
-            <Field label="Tác giả" required value={author} onChangeText={setAuthor} />
-            <Field label="Nhà xuất bản" required value={publisher} onChangeText={setPublisher} />
-            <Field label="Năm xuất bản" required value={year} onChangeText={setYear} keyboardType="numeric" />
+            {renderField('title', 'Tên sách', 'Nhập tên sách')}
+            {renderField('author', 'Tác giả', 'Nhập tác giả')}
+            {renderField('publisher', 'Nhà xuất bản', 'Nhập nhà xuất bản')}
+            {renderField('year', 'Năm xuất bản', 'VD: 2024', 'numeric')}
 
-            <TouchableOpacity style={styles.primaryBtn} onPress={handleCreate}>
-                <Text style={styles.primaryText}>Tạo sách</Text>
+            <TouchableOpacity
+                style={[styles.primaryBtn, !isValid || isSubmitting ? { opacity: 0.6 } : null]}
+                onPress={handleSubmit(onSubmit)}
+                disabled={!isValid || isSubmitting}
+            >
+                <Text style={styles.primaryBtnText}>{isSubmitting ? 'Đang tạo...' : 'Tạo sách'}</Text>
             </TouchableOpacity>
         </ScrollView>
     );
 }
 
-function Field({ label, required, value, onChangeText, keyboardType }: any) {
-    return (
-        <View style={{ marginBottom: 14 }}>
-            <Text style={styles.label}>{label} {required && <Text style={{ color: 'red' }}>*</Text>}</Text>
-            <TextInput style={styles.input} value={value} onChangeText={onChangeText} keyboardType={keyboardType} placeholder={`Nhập ${label.toLowerCase()}`} />
-        </View>
-    );
-}
-
 const styles = StyleSheet.create({
-    container:{ flex:1, backgroundColor:'#fff', padding:16 },
-    coverBox:{ width:48, height:48, borderRadius:8, borderWidth:1, borderColor:'#e5e7eb', alignItems:'center', justifyContent:'center', backgroundColor:'#f9fafb', marginBottom:16 },
-    label:{ fontSize:14, color:'#374151', marginBottom:6 },
-    input:{ borderWidth:1, borderColor:'#d1d5db', borderRadius:10, paddingHorizontal:12, paddingVertical:10, backgroundColor:'#fff' },
-    primaryBtn:{ marginTop:12, backgroundColor:'#3b82f6', paddingVertical:14, borderRadius:10, alignItems:'center' },
-    primaryText:{ color:'#fff', fontWeight:'600' },
+    container: { flex: 1, backgroundColor: '#fff', padding: 16 },
+
+    coverBox: {
+        width: 48, height: 48, borderRadius: 8, borderWidth: 1, borderColor: '#e5e7eb',
+        alignItems: 'center', justifyContent: 'center', backgroundColor: '#f9fafb', marginBottom: 16,
+    },
+
+    label: { fontSize: 14, color: '#374151', marginBottom: 6 },
+    input: {
+        borderWidth: 1, borderColor: '#d1d5db', borderRadius: 10,
+        paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#fff',
+    },
+    errorText: { color: '#ef4444', marginTop: 6, fontSize: 12 },
+
+    primaryBtn: {
+        backgroundColor: '#3b82f6', paddingVertical: 14, borderRadius: 10, alignItems: 'center', marginTop: 8,
+    },
+    primaryBtnText: { color: '#fff', fontWeight: '600' },
 });
