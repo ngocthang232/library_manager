@@ -28,8 +28,8 @@ export default function RegisterScreen() {
         confirm?: boolean;
     }>({});
 
-    const passRef = useRef<TextInput>(null);
-    const confirmRef = useRef<TextInput>(null);
+    const passRef = useRef<TextInput | null>(null);
+    const confirmRef = useRef<TextInput | null>(null);
 
     // ===== Rules =====
     const validateUsername = (v: string) => {

@@ -1,132 +1,203 @@
-import React from 'react';
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import {
+    View,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    ScrollView,
+    Image,
+    StyleSheet,
+    Alert,
+    ActivityIndicator,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
-
-import { useForm, Controller } from 'react-hook-form';
+import * as ImagePicker from 'expo-image-picker';
 import * as yup from 'yup';
+import { useForm, Controller } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
+import axios from 'axios';
+import { Picker } from '@react-native-picker/picker';
 
-type FormValues = {
-    title: string;
-    author: string;
-    publisher: string;
-    year: string; // để dễ kiểm tra chuỗi số; khi gửi có thể parseInt
-};
-
-const CURRENT_YEAR = new Date().getFullYear();
-
-const schema: yup.SchemaOf<FormValues> = yup.object({
-    title: yup
-        .string()
-        .trim()
-        .required('Vui lòng nhập tên sách')
-        .min(2, 'Tên sách tối thiểu 2 ký tự'),
-    author: yup
-        .string()
-        .trim()
-        .required('Vui lòng nhập tác giả'),
-    publisher: yup
-        .string()
-        .trim()
-        .required('Vui lòng nhập nhà xuất bản'),
+const schema = yup.object().shape({
+    title: yup.string().required('Tên sách là bắt buộc'),
+    author: yup.string().required('Tác giả là bắt buộc'),
+    publisher: yup.string().required('Nhà xuất bản là bắt buộc'),
     year: yup
-        .string()
-        .required('Vui lòng nhập năm xuất bản')
-        .matches(/^\d+$/, 'Năm xuất bản phải là số')
-        .test('range', `Năm hợp lệ từ 1900 đến ${CURRENT_YEAR + 1}`, (val) => {
-            const n = Number(val);
-            return n >= 1900 && n <= CURRENT_YEAR + 1;
-        }),
+        .number()
+        .typeError('Năm xuất bản phải là số')
+        .min(1000, 'Năm không hợp lệ')
+        .required('Năm xuất bản là bắt buộc'),
+    categoryId: yup.number().required('Vui lòng chọn thể loại'),
 });
 
 export default function AddBookScreen() {
+    const [images, setImages] = useState<string[]>([]);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [categories, setCategories] = useState<{ id: number; tenTheLoai: string }[]>([]);
+    const [loadingCategories, setLoadingCategories] = useState(true);
+
     const {
         control,
         handleSubmit,
-        formState: { errors, isValid, isSubmitting },
-    } = useForm<FormValues>({
-        resolver: yupResolver(schema),
-        mode: 'onChange',          // validate theo từng thay đổi
-        reValidateMode: 'onChange',
+        formState: { errors },
+    } = useForm({
         defaultValues: {
             title: '',
             author: '',
             publisher: '',
             year: '',
+            categoryId: undefined,
         },
+        mode: 'onTouched',
+        resolver: yupResolver(schema),
     });
 
-    const onSubmit = async (values: FormValues) => {
+    useEffect(() => {
+        const fetchCategories = async () => {
+            try {
+                const res = await axios.get('http://127.0.0.1:8080/api/theloai');
+                setCategories(res.data);
+            } catch (e) {
+                Alert.alert('Lỗi', 'Không thể tải danh sách thể loại');
+            } finally {
+                setLoadingCategories(false);
+            }
+        };
+        fetchCategories();
+    }, []);
+
+    const pickImages = async () => {
+        const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!permissionResult.granted) {
+            Alert.alert('Quyền bị từ chối', 'Bạn cần cho phép truy cập thư viện ảnh');
+            return;
+        }
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+            allowsMultipleSelection: true,
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            quality: 1,
+        });
+
+        if (!result.canceled) {
+            const selected = result.assets.map((asset) => asset.uri);
+            setImages((prev) => [...prev, ...selected]);
+        }
+    };
+
+    const onSubmit = async (data: any) => {
+        if (images.length === 0) {
+            Alert.alert('Thiếu ảnh', 'Vui lòng chọn ít nhất 1 ảnh');
+            return;
+        }
+
+        setIsSubmitting(true);
         try {
-            // Chuyển year thành số nếu backend cần
-            const payload = {
-                title: values.title.trim(),
-                author: values.author.trim(),
-                publisher: values.publisher.trim(),
-                year: Number(values.year),
-            };
+            const formData = new FormData();
+            formData.append('title', data.title);
+            formData.append('author', data.author);
+            formData.append('publisher', data.publisher);
+            formData.append('year', data.year);
+            formData.append('theLoaiId', data.categoryId);
 
-            // TODO: Gọi API thật để tạo sách
-            // const res = await fetch('http://<server>/api/books', { ... })
-            // const data = await res.json();
+            images.forEach((uri, index) => {
+                formData.append('images', {
+                    uri,
+                    type: 'image/jpeg',
+                    name: `book_image_${index}.jpg`,
+                } as any);
+            });
 
-            Alert.alert('Thành công', 'Đã tạo sách!');
-            router.back(); // quay lại danh sách
-        } catch (e: any) {
-            Alert.alert('Lỗi', e?.message || 'Không thể tạo sách. Vui lòng thử lại!');
+            await axios.post('http://localhost:8080/api/book/add', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            });
+
+            Alert.alert('Thành công', 'Tạo sách thành công');
+        } catch (err) {
+            Alert.alert('Lỗi', 'Có lỗi xảy ra khi tạo sách');
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
     const renderField = (
-        name: keyof FormValues,
+        name: keyof any,
         label: string,
         placeholder: string,
-        keyboardType?: 'default' | 'numeric'
+        keyboardType = 'default'
     ) => (
-        <View style={{ marginBottom: 14 }}>
-            <Text style={styles.label}>{label} <Text style={{ color: 'red' }}>*</Text></Text>
-
-            <Controller
-                control={control}
-                name={name}
-                render={({ field: { onChange, onBlur, value } }) => (
+        <Controller
+            control={control}
+            name={name}
+            render={({ field: { onChange, onBlur, value } }) => (
+                <View style={styles.inputGroup}>
+                    <Text style={styles.label}>{label}</Text>
                     <TextInput
-                        value={value}
+                        placeholder={placeholder}
+                        style={[styles.input, errors[name] && styles.inputError]}
                         onChangeText={onChange}
                         onBlur={onBlur}
-                        placeholder={placeholder}
+                        value={value}
                         keyboardType={keyboardType}
-                        style={[
-                            styles.input,
-                            errors[name] && { borderColor: '#ef4444' }, // viền đỏ khi lỗi
-                        ]}
                     />
-                )}
-            />
-
-            {!!errors[name]?.message && (
-                <Text style={styles.errorText}>{String(errors[name]?.message)}</Text>
+                    {errors[name] && <Text style={styles.error}>{errors[name]?.message}</Text>}
+                </View>
             )}
-        </View>
+        />
     );
 
     return (
         <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 24 }}>
-            {/* Ảnh bìa (placeholder) */}
-            <TouchableOpacity style={styles.coverBox} onPress={() => { /* TODO: image picker */ }}>
-                <Ionicons name="image-outline" size={24} color="#3b82f6" />
+            <TouchableOpacity style={styles.coverBox} onPress={pickImages}>
+                <Ionicons name="image-outline" size={28} color="#3b82f6" />
+                <Text style={styles.pickText}>Chọn ảnh bìa</Text>
             </TouchableOpacity>
+
+            <ScrollView horizontal style={{ marginTop: 12, marginBottom: 20 }}>
+                {images.map((uri, index) => (
+                    <Image
+                        key={index}
+                        source={{ uri }}
+                        style={{ width: 100, height: 100, marginRight: 10, borderRadius: 8 }}
+                    />
+                ))}
+            </ScrollView>
 
             {renderField('title', 'Tên sách', 'Nhập tên sách')}
             {renderField('author', 'Tác giả', 'Nhập tác giả')}
             {renderField('publisher', 'Nhà xuất bản', 'Nhập nhà xuất bản')}
             {renderField('year', 'Năm xuất bản', 'VD: 2024', 'numeric')}
 
+            <View style={styles.inputGroup}>
+                <Text style={styles.label}>Thể loại</Text>
+                {loadingCategories ? (
+                    <ActivityIndicator />
+                ) : (
+                    <Controller
+                        control={control}
+                        name="categoryId"
+                        render={({ field: { onChange, value } }) => (
+                            <View style={[styles.pickerWrapper, errors.categoryId && styles.inputError]}>
+                                <Picker
+                                    selectedValue={value}
+                                    onValueChange={(itemValue) => onChange(itemValue)}
+                                >
+                                    <Picker.Item label="-- Chọn thể loại --" value={undefined} />
+                                    {categories.map((c) => (
+                                        <Picker.Item key={c.id} label={c.tenTheLoai} value={c.id} />
+                                    ))}
+                                </Picker>
+                            </View>
+                        )}
+                    />
+                )}
+                {errors.categoryId && <Text style={styles.error}>{errors.categoryId.message}</Text>}
+            </View>
+
             <TouchableOpacity
-                style={[styles.primaryBtn, !isValid || isSubmitting ? { opacity: 0.6 } : null]}
+                style={[styles.primaryBtn, isSubmitting ? { opacity: 0.6 } : null]}
                 onPress={handleSubmit(onSubmit)}
-                disabled={!isValid || isSubmitting}
+                disabled={isSubmitting}
             >
                 <Text style={styles.primaryBtnText}>{isSubmitting ? 'Đang tạo...' : 'Tạo sách'}</Text>
             </TouchableOpacity>
@@ -135,22 +206,56 @@ export default function AddBookScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#fff', padding: 16 },
-
+    container: {
+        padding: 16,
+        backgroundColor: '#fff',
+    },
     coverBox: {
-        width: 48, height: 48, borderRadius: 8, borderWidth: 1, borderColor: '#e5e7eb',
-        alignItems: 'center', justifyContent: 'center', backgroundColor: '#f9fafb', marginBottom: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 16,
+        borderWidth: 2,
+        borderColor: '#3b82f6',
+        borderStyle: 'dashed',
+        borderRadius: 8,
     },
-
-    label: { fontSize: 14, color: '#374151', marginBottom: 6 },
+    pickText: {
+        marginTop: 6,
+        color: '#3b82f6',
+    },
+    inputGroup: {
+        marginBottom: 16,
+    },
+    label: {
+        fontWeight: '600',
+        marginBottom: 4,
+    },
     input: {
-        borderWidth: 1, borderColor: '#d1d5db', borderRadius: 10,
-        paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#fff',
+        borderWidth: 1,
+        borderColor: '#ccc',
+        borderRadius: 6,
+        padding: 10,
     },
-    errorText: { color: '#ef4444', marginTop: 6, fontSize: 12 },
-
+    pickerWrapper: {
+        borderWidth: 1,
+        borderColor: '#ccc',
+        borderRadius: 6,
+    },
+    inputError: {
+        borderColor: 'red',
+    },
+    error: {
+        color: 'red',
+        marginTop: 4,
+    },
     primaryBtn: {
-        backgroundColor: '#3b82f6', paddingVertical: 14, borderRadius: 10, alignItems: 'center', marginTop: 8,
+        backgroundColor: '#3b82f6',
+        paddingVertical: 12,
+        borderRadius: 8,
+        alignItems: 'center',
     },
-    primaryBtnText: { color: '#fff', fontWeight: '600' },
+    primaryBtnText: {
+        color: 'white',
+        fontWeight: '600',
+    },
 });
